@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GameScraper — Game Deals & Price Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- Sidebar Navigation -->
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="logo">
+            <i class="fa-solid fa-gamepad logo-icon"></i>
+            <span class="logo-text">Game<span class="logo-accent">Scraper</span></span>
+        </div>
+    </div>
+    <ul class="nav-list">
+        <li class="nav-item active" data-section="dashboard">
+            <a href="#" class="nav-link">
+                <i class="fa-solid fa-chart-line"></i>
+                <span>Dashboard</span>
+            </a>
+        </li>
+        <li class="nav-item" data-section="deals">
+            <a href="#" class="nav-link">
+                <i class="fa-solid fa-fire"></i>
+                <span>Best Deals</span>
+            </a>
+        </li>
+        <li class="nav-item" data-section="explore">
+            <a href="#" class="nav-link">
+                <i class="fa-solid fa-compass"></i>
+                <span>Explore</span>
+            </a>
+        </li>
+        <li class="nav-item" data-section="wishlist">
+            <a href="#" class="nav-link">
+                <i class="fa-solid fa-heart"></i>
+                <span>Wishlist</span>
+            </a>
+        </li>
+        <li class="nav-item" data-section="alerts">
+            <a href="#" class="nav-link">
+                <i class="fa-solid fa-bell"></i>
+                <span>Price Alerts</span>
+            </a>
+        </li>
+        <li class="nav-item" data-section="history">
+            <a href="#" class="nav-link">
+                <i class="fa-solid fa-chart-area"></i>
+                <span>Price History</span>
+            </a>
+        </li>
+    </ul>
+    <div class="sidebar-footer">
+        <button class="btn-refresh" id="btn-refresh-data">
+            <i class="fa-solid fa-sync"></i>
+            <span>Refresh Data</span>
+        </button>
+    </div>
+</nav>
+
+<!-- Mobile Top Bar Toggle -->
+<button class="mobile-menu-btn" id="mobile-menu-btn">
+    <i class="fa-solid fa-bars"></i>
+</button>
+
+<!-- Main Content Area -->
+<main class="main-content" id="main-content">
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <h1 class="page-title" id="page-title">Dashboard</h1>
+        </div>
+        <div class="top-bar-right">
+            <div class="search-wrapper">
+                <i class="fa-solid fa-search search-icon"></i>
+                <input type="text" class="search-input" id="global-search" placeholder="Search games..." autocomplete="off">
+                <div class="search-results-dropdown" id="search-dropdown"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== DASHBOARD SECTION ==================== -->
+    <section class="content-section active" id="dashboard-section">
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card" id="stat-total-games">
+                <div class="stat-icon"><i class="fa-solid fa-gamepad"></i></div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-val-games">—</span>
+                    <span class="stat-label">Total Games</span>
+                </div>
+            </div>
+            <div class="stat-card" id="stat-total-deals">
+                <div class="stat-icon icon-deals"><i class="fa-solid fa-tags"></i></div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-val-deals">—</span>
+                    <span class="stat-label">Active Deals</span>
+                </div>
+            </div>
+            <div class="stat-card" id="stat-avg-discount">
+                <div class="stat-icon icon-discount"><i class="fa-solid fa-percent"></i></div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-val-discount">—</span>
+                    <span class="stat-label">Avg Discount</span>
+                </div>
+            </div>
+            <div class="stat-card stat-card-highlight" id="stat-best-deal">
+                <div class="stat-icon icon-best"><i class="fa-solid fa-trophy"></i></div>
+                <div class="stat-info">
+                    <span class="stat-value" id="stat-val-best">—</span>
+                    <span class="stat-label">Best Deal</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-block">
+            <div class="section-header">
+                <h2><i class="fa-solid fa-fire"></i> Top Deals</h2>
+                <a href="#" class="view-all-link" data-navigate="deals">View All <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+            <div class="games-grid" id="dashboard-top-deals">
+                <div class="loading-spinner"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <div class="section-block">
+            <div class="section-header">
+                <h2><i class="fa-solid fa-clock"></i> Recently Updated</h2>
+                <a href="#" class="view-all-link" data-navigate="deals">View All <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+            <div class="games-grid" id="dashboard-recent-deals">
+                <div class="loading-spinner"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== BEST DEALS SECTION ==================== -->
+    <section class="content-section" id="deals-section">
+        <div class="deals-toolbar">
+            <div class="toolbar-left">
+                <button class="btn-secondary btn-sm" id="btn-toggle-filters">
+                    <i class="fa-solid fa-sliders"></i> Filters
+                </button>
+                <span class="results-count" id="deals-results-count"></span>
+            </div>
+            <div class="toolbar-right">
+                <label class="toolbar-label">Sort by:</label>
+                <select class="form-select" id="sort-select">
+                    <option value="discount">Biggest Discount</option>
+                    <option value="price_asc">Price: Low to High</option>
+                    <option value="price_desc">Price: High to Low</option>
+                    <option value="newest">Recently Updated</option>
+                    <option value="metacritic">Metacritic Score</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="deals-layout">
+            <aside class="filter-panel" id="filter-panel">
+                <div class="filter-header">
+                    <h3>Filters</h3>
+                    <button class="btn-text" id="btn-reset-filters">Reset All</button>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Genre</label>
+                    <select class="form-select" id="filter-genre">
+                        <option value="">All Genres</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Store</label>
+                    <select class="form-select" id="filter-store">
+                        <option value="">All Stores</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Price Range</label>
+                    <div class="price-range-inputs">
+                        <input type="number" class="form-input" id="filter-min-price" placeholder="Min $" min="0" step="0.01">
+                        <span class="range-sep">—</span>
+                        <input type="number" class="form-input" id="filter-max-price" placeholder="Max $" min="0" step="0.01">
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Min Discount: <span id="discount-val">0%</span></label>
+                    <input type="range" class="form-range" id="filter-min-discount" min="0" max="100" value="0">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-toggle-label">
+                        <input type="checkbox" id="filter-free" class="form-checkbox">
+                        <span class="toggle-slider"></span>
+                        <span>Free Games Only</span>
+                    </label>
+                </div>
+
+                <button class="btn-primary btn-block" id="btn-apply-filters">Apply Filters</button>
+            </aside>
+
+            <div class="deals-content">
+                <div class="games-grid" id="deals-grid">
+                    <div class="loading-spinner"><div class="spinner"></div></div>
+                </div>
+                <div class="pagination" id="deals-pagination"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== EXPLORE / SEARCH SECTION ==================== -->
+    <section class="content-section" id="explore-section">
+        <div class="explore-header">
+            <h2 id="explore-title">Search Results</h2>
+            <p class="explore-subtitle" id="explore-subtitle">Use the search bar above to find games</p>
+        </div>
+        <div class="games-grid" id="explore-grid">
+            <div class="empty-state">
+                <i class="fa-solid fa-compass"></i>
+                <h3>Explore Games</h3>
+                <p>Type a game name in the search bar to find deals across all stores.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== WISHLIST SECTION ==================== -->
+    <section class="content-section" id="wishlist-section">
+        <div class="section-header">
+            <h2><i class="fa-solid fa-heart"></i> My Wishlist</h2>
+        </div>
+        <div class="games-grid" id="wishlist-grid">
+            <div class="loading-spinner"><div class="spinner"></div></div>
+        </div>
+    </section>
+
+    <!-- ==================== PRICE ALERTS SECTION ==================== -->
+    <section class="content-section" id="alerts-section">
+        <div class="section-header">
+            <h2><i class="fa-solid fa-bell"></i> Price Alerts</h2>
+        </div>
+
+        <div class="alerts-tabs">
+            <button class="alert-tab active" data-tab="active-alerts">Active</button>
+            <button class="alert-tab" data-tab="triggered-alerts">Triggered</button>
+        </div>
+
+        <div class="alerts-tab-content active" id="active-alerts">
+            <div class="alerts-list" id="active-alerts-list">
+                <div class="loading-spinner"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <div class="alerts-tab-content" id="triggered-alerts">
+            <div class="alerts-list" id="triggered-alerts-list">
+                <div class="loading-spinner"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== PRICE HISTORY SECTION ==================== -->
+    <section class="content-section" id="history-section">
+        <div class="section-header">
+            <h2><i class="fa-solid fa-chart-area"></i> Price History</h2>
+        </div>
+        <div class="history-search-wrapper">
+            <div class="search-wrapper search-wrapper-lg">
+                <i class="fa-solid fa-search search-icon"></i>
+                <input type="text" class="search-input" id="history-search" placeholder="Search for a game to view its price history..." autocomplete="off">
+                <div class="search-results-dropdown" id="history-search-dropdown"></div>
+            </div>
+        </div>
+        <div class="history-content" id="history-content">
+            <div class="empty-state">
+                <i class="fa-solid fa-chart-area"></i>
+                <h3>View Price History</h3>
+                <p>Search for a game above to see its price changes over time.</p>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<!-- ==================== GAME DETAIL MODAL ==================== -->
+<div class="modal-overlay" id="game-modal">
+    <div class="modal-content">
+        <button class="modal-close" id="modal-close-game"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-body" id="game-modal-body">
+            <div class="loading-spinner"><div class="spinner"></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== ALERT CREATION MODAL ==================== -->
+<div class="modal-overlay" id="alert-modal">
+    <div class="modal-content modal-sm">
+        <button class="modal-close" id="modal-close-alert"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-body">
+            <h2 class="modal-title"><i class="fa-solid fa-bell"></i> Set Price Alert</h2>
+            <div class="alert-form">
+                <div class="alert-game-info" id="alert-game-info">
+                    <img src="" alt="" id="alert-game-thumb" class="alert-game-thumb">
+                    <div>
+                        <h3 id="alert-game-title"></h3>
+                        <p class="alert-current-price">Current Price: <span id="alert-current-price"></span></p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="alert-target-price">Target Price ($)</label>
+                    <input type="number" class="form-input form-input-lg" id="alert-target-price" placeholder="Enter your target price" min="0" step="0.01">
+                    <p class="form-hint">We'll notify you when the price drops to or below this amount.</p>
+                </div>
+                <input type="hidden" id="alert-game-id">
+                <button class="btn-primary btn-block btn-lg" id="btn-save-alert">
+                    <i class="fa-solid fa-bell"></i> Create Alert
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TOAST CONTAINER ==================== -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
