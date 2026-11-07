@@ -8,7 +8,6 @@ scraping scheduler, and kicks off an initial scrape on first launch.
 
 import os
 import logging
-import threading
 
 from flask import Flask
 
@@ -16,7 +15,7 @@ from config import DATABASE_PATH
 from database import init_db
 from routes.api import api_bp
 from routes.views import views_bp
-from scraper.scheduler import start_scheduler, run_initial_scrape
+from scraper.scheduler import start_scheduler
 
 
 def create_app():
@@ -49,14 +48,6 @@ def create_app():
 
     # ── Scheduler ────────────────────────────────────────────────────────
     start_scheduler(app)
-
-    # ── Initial scrape (background) ──────────────────────────────────────
-    thread = threading.Thread(
-        target=run_initial_scrape,
-        args=(app,),
-        daemon=True,
-    )
-    thread.start()
 
     return app
 

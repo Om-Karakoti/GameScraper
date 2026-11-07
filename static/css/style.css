@@ -419,6 +419,12 @@ textarea {
     margin-bottom: 36px;
 }
 
+.section-description {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin: -12px 0 16px;
+}
+
 .section-header {
     display: flex;
     align-items: center;
@@ -1653,6 +1659,48 @@ textarea {
 
 .history-game-info h3 {
     font-size: 18px;
+    font-weight: 600;
+}
+
+.history-events {
+    margin-top: 18px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.history-events h4 {
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.history-events ol {
+    margin: 0;
+    padding-left: 22px;
+}
+
+.history-event {
+    padding: 4px 0;
+}
+
+.history-event.decrease {
+    color: var(--color-success);
+}
+
+.history-event.increase {
+    color: var(--color-danger, #fb7185);
+}
+
+.popularity-tag,
+.badge-popular {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
     font-weight: 600;
 }
 

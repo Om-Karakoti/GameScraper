@@ -91,6 +91,14 @@ def run_initial_scrape(app):
             except Exception:
                 logger.exception("Initial scrape error on page %d", page)
 
+        try:
+            popular_games = cheapshark.fetch_deals(
+                page=0, sort_by='Reviews', on_sale=False
+            )
+            total_processed += cheapshark.process_deals(popular_games)
+        except Exception:
+            logger.exception("Initial popular games scrape failed")
+
         logger.info("Initial scrape complete – %d deals processed", total_processed)
 
         # Quick enrichment pass for the freshly loaded games
@@ -137,6 +145,14 @@ def scrape_all_deals(app):
                     total_processed += count
                 except Exception:
                     logger.exception("Error scraping deals page %d", page)
+
+            try:
+                popular_games = cheapshark.fetch_deals(
+                    page=0, sort_by='Reviews', on_sale=False
+                )
+                total_processed += cheapshark.process_deals(popular_games)
+            except Exception:
+                logger.exception("Popular games scrape failed")
 
             logger.info("Deal scrape finished – %d deals processed", total_processed)
 

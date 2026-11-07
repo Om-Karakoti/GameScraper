@@ -201,6 +201,16 @@ def process_deals(deals_data):
                     else None
                 ),
                 'metacritic_url': deal.get('metacriticLink') or None,
+                'steam_rating_percent': (
+                    int(deal['steamRatingPercent'])
+                    if str(deal.get('steamRatingPercent', '')).isdigit()
+                    else None
+                ),
+                'steam_rating_count': (
+                    int(deal['steamRatingCount'])
+                    if str(deal.get('steamRatingCount', '')).isdigit()
+                    else None
+                ),
             }
 
             game_id = database.upsert_game(game_data)

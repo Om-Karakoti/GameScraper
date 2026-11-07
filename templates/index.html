@@ -141,6 +141,17 @@
                 <div class="loading-spinner"><div class="spinner"></div></div>
             </div>
         </div>
+
+        <div class="section-block">
+            <div class="section-header">
+                <h2><i class="fa-solid fa-star"></i> Popular Games</h2>
+                <a href="#" class="view-all-link" data-navigate="deals">View All <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+            <p class="section-description">At least 1,000 Steam reviews and 70% positive ratings.</p>
+            <div class="games-grid" id="dashboard-popular-games">
+                <div class="loading-spinner"><div class="spinner"></div></div>
+            </div>
+        </div>
     </section>
 
     <!-- ==================== BEST DEALS SECTION ==================== -->
@@ -160,6 +171,7 @@
                     <option value="price_desc">Price: High to Low</option>
                     <option value="newest">Recently Updated</option>
                     <option value="metacritic">Metacritic Score</option>
+                    <option value="popularity">Most Steam Reviews</option>
                 </select>
             </div>
         </div>
@@ -182,6 +194,14 @@
                     <label class="filter-label">Store</label>
                     <select class="form-select" id="filter-store">
                         <option value="">All Stores</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label" for="filter-popular">Popularity</label>
+                    <select class="form-select" id="filter-popular">
+                        <option value="false">All games</option>
+                        <option value="true">Popular (1,000+ reviews, 70%+ positive)</option>
                     </select>
                 </div>
 

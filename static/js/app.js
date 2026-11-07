@@ -17,7 +17,8 @@ const App = {
         min_price: '',
         max_price: '',
         min_discount: 0,
-        free: false
+        free: false,
+        popular_only: false
     },
     stores: [],
     genres: [],
@@ -411,7 +412,8 @@ const Dashboard = {
         await Promise.all([
             this.loadStats(),
             this.loadTopDeals(),
-            this.loadRecentDeals()
+            this.loadRecentDeals(),
+            this.loadPopularGames()
         ]);
     },
 
@@ -475,6 +477,25 @@ const Dashboard = {
         } catch (e) {
             container.innerHTML = '<div class="empty-state"><p>Error loading recent deals.</p></div>';
         }
+    },
+
+    async loadPopularGames() {
+        const container = document.getElementById('dashboard-popular-games');
+        if (!container) return;
+        container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+
+        try {
+            const res = await fetch('/api/deals?limit=8&sort=popularity&popular_only=true');
+            const data = await res.json();
+            if (res.ok && data.deals && data.deals.length > 0) {
+                container.innerHTML = data.deals.map(deal => createGameCard(deal)).join('');
+                attachCardEventListeners(container);
+            } else {
+                container.innerHTML = '<div class="empty-state"><p>No popular games found yet. Refresh data to discover games.</p></div>';
+            }
+        } catch (e) {
+            container.innerHTML = '<div class="empty-state"><p>Error loading popular games.</p></div>';
+        }
     }
 };
 
@@ -503,6 +524,7 @@ const Deals = {
         if (App.filters.max_price) params.append('max_price', App.filters.max_price);
         if (App.filters.min_discount > 0) params.append('min_discount', App.filters.min_discount);
         if (App.filters.free) params.append('free', 'true');
+        if (App.filters.popular_only) params.append('popular_only', 'true');
 
         try {
             const res = await fetch(`/api/deals?${params.toString()}`);
@@ -510,7 +532,8 @@ const Deals = {
 
             if (res.ok && data.deals) {
                 App.totalPages = data.total_pages || 1;
-                if (countSpan) countSpan.textContent = `Showing ${data.deals.length} of ${data.total} deals`;
+                const resultType = App.filters.popular_only ? 'popular games' : 'deals';
+                if (countSpan) countSpan.textContent = `Showing ${data.deals.length} of ${data.total} ${resultType}`;
 
                 if (data.deals.length > 0) {
                     grid.innerHTML = data.deals.map(deal => createGameCard(deal)).join('');
@@ -541,6 +564,7 @@ const Deals = {
         App.filters.max_price = document.getElementById('filter-max-price').value;
         App.filters.min_discount = parseInt(document.getElementById('filter-min-discount').value) || 0;
         App.filters.free = document.getElementById('filter-free').checked;
+        App.filters.popular_only = document.getElementById('filter-popular').value === 'true';
 
         // Reset to page 1 on filter application
         this.load(1);
@@ -560,6 +584,7 @@ const Deals = {
         document.getElementById('filter-min-discount').value = 0;
         document.getElementById('discount-val').textContent = '0%';
         document.getElementById('filter-free').checked = false;
+        document.getElementById('filter-popular').value = 'false';
 
         App.filters = {
             sort: document.getElementById('sort-select').value || 'discount',
@@ -568,7 +593,8 @@ const Deals = {
             min_price: '',
             max_price: '',
             min_discount: 0,
-            free: false
+            free: false,
+            popular_only: false
         };
 
         this.load(1);
@@ -710,7 +736,7 @@ const GameDetail = {
             const [gameRes, pricesRes, historyRes] = await Promise.all([
                 fetch(`/api/games/${gameId}`).then(r => r.json()),
                 fetch(`/api/games/${gameId}/prices`).then(r => r.json()),
-                fetch(`/api/games/${gameId}/history`).then(r => r.json())
+                fetch(`/api/games/${gameId}/history?days=0`).then(r => r.json())
             ]);
 
             if (gameRes.error) {
@@ -738,6 +764,7 @@ const GameDetail = {
                             <div class="hero-tags">
                                 ${game.genre ? `<span class="badge badge-primary"><i class="fa-solid fa-tag"></i> ${game.genre}</span>` : ''}
                                 ${game.platform ? `<span class="badge badge-secondary"><i class="fa-solid fa-desktop"></i> ${game.platform}</span>` : ''}
+                                ${game.is_popular ? `<span class="badge badge-popular"><i class="fa-solid fa-star"></i> Popular · ${Number(game.steam_rating_count).toLocaleString()} reviews (${game.steam_rating_percent}% positive)</span>` : ''}
                                 ${game.metacritic_score ? `<span class="badge badge-metacritic"><i class="fa-solid fa-star"></i> Metacritic: ${game.metacritic_score}</span>` : ''}
                                 ${game.release_date ? `<span class="badge badge-secondary"><i class="fa-solid fa-calendar"></i> ${game.release_date}</span>` : ''}
                             </div>
@@ -828,6 +855,7 @@ const GameDetail = {
                     <div class="chart-container" style="position: relative; height: 260px; width: 100%;">
                         <canvas id="modal-history-chart"></canvas>
                     </div>
+                    <div class="history-events" id="modal-history-events"></div>
                 </div>
             `;
 
@@ -866,6 +894,11 @@ const GameDetail = {
             App.charts.modalHistory = null;
         }
 
+        renderPriceHistoryEvents(
+            historyData,
+            document.getElementById('modal-history-events')
+        );
+
         if (!historyData || historyData.length === 0) {
             const ctx = canvas.getContext('2d');
             ctx.font = '14px Inter, sans-serif';
@@ -875,63 +908,10 @@ const GameDetail = {
             return;
         }
 
-        // Group history by store or plot timeline
-        const sorted = [...historyData].sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
-        const labels = sorted.map(item => new Date(item.recorded_at).toLocaleDateString());
-        const dataPoints = sorted.map(item => item.price);
-
-        App.charts.modalHistory = new Chart(canvas, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Price ($ USD)',
-                    data: dataPoints,
-                    borderColor: '#00d4ff',
-                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-                    borderWidth: 2,
-                    tension: 0.25,
-                    fill: true,
-                    pointBackgroundColor: '#00d4ff',
-                    pointBorderColor: '#fff',
-                    pointRadius: 4,
-                    pointHoverRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#12121a',
-                        titleColor: '#00d4ff',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#2a2a40',
-                        borderWidth: 1,
-                        callbacks: {
-                            label: function (ctx) {
-                                return `Price: $${ctx.raw.toFixed(2)}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { color: '#94a3b8', font: { size: 11 } }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: { size: 11 },
-                            callback: function (val) { return `$${val}`; }
-                        }
-                    }
-                }
-            }
-        });
+        App.charts.modalHistory = new Chart(
+            canvas,
+            buildPriceHistoryChartConfig(historyData, true)
+        );
     }
 };
 
@@ -1216,7 +1196,7 @@ const PriceHistory = {
         try {
             const [game, history] = await Promise.all([
                 fetch(`/api/games/${gameId}`).then(r => r.json()),
-                fetch(`/api/games/${gameId}/history`).then(r => r.json())
+                fetch(`/api/games/${gameId}/history?days=0`).then(r => r.json())
             ]);
 
             if (game.error) {
@@ -1235,6 +1215,7 @@ const PriceHistory = {
                 <div class="chart-container" style="position: relative; height: 380px; width: 100%; margin-top: 20px;">
                     <canvas id="standalone-history-chart"></canvas>
                 </div>
+                <div class="history-events" id="history-events"></div>
             `;
 
             const canvas = document.getElementById('standalone-history-chart');
@@ -1242,6 +1223,8 @@ const PriceHistory = {
                 App.charts.history.destroy();
                 App.charts.history = null;
             }
+
+            renderPriceHistoryEvents(history, document.getElementById('history-events'));
 
             if (!history || history.length === 0) {
                 const ctx = canvas.getContext('2d');
@@ -1252,59 +1235,10 @@ const PriceHistory = {
                 return;
             }
 
-            const sorted = [...history].sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
-            const labels = sorted.map(item => new Date(item.recorded_at).toLocaleDateString());
-            const dataPoints = sorted.map(item => item.price);
-
-            App.charts.history = new Chart(canvas, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: `${game.title} Price ($)`,
-                        data: dataPoints,
-                        borderColor: '#7c3aed',
-                        backgroundColor: 'rgba(124, 58, 237, 0.15)',
-                        borderWidth: 3,
-                        tension: 0.3,
-                        fill: true,
-                        pointBackgroundColor: '#00d4ff',
-                        pointBorderColor: '#fff',
-                        pointRadius: 5,
-                        pointHoverRadius: 8
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { labels: { color: '#e2e8f0' } },
-                        tooltip: {
-                            backgroundColor: '#12121a',
-                            titleColor: '#00d4ff',
-                            bodyColor: '#e2e8f0',
-                            borderColor: '#2a2a40',
-                            borderWidth: 1,
-                            callbacks: {
-                                label: (ctx) => `Price: $${ctx.raw.toFixed(2)}`
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: { color: '#94a3b8' }
-                        },
-                        y: {
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                callback: (val) => `$${val}`
-                            }
-                        }
-                    }
-                }
-            });
+            App.charts.history = new Chart(
+                canvas,
+                buildPriceHistoryChartConfig(history, true)
+            );
 
         } catch (e) {
             console.error('History load error:', e);
@@ -1316,6 +1250,136 @@ const PriceHistory = {
 // =================================================================
 // 8. CARD CREATION HELPER
 // =================================================================
+function parseHistoryDate(value) {
+    const timestamp = String(value);
+    return new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(timestamp) ? timestamp : `${timestamp}Z`);
+}
+
+function buildPriceHistoryChartConfig(historyData, showLegend) {
+    const colors = ['#00d4ff', '#a78bfa', '#f59e0b', '#34d399', '#fb7185', '#60a5fa'];
+    const stores = new Map();
+    [...historyData]
+        .sort((a, b) => parseHistoryDate(a.recorded_at) - parseHistoryDate(b.recorded_at))
+        .forEach(point => {
+            const key = String(point.store_id);
+            if (!stores.has(key)) stores.set(key, { name: point.store_name || 'Store', points: [] });
+            stores.get(key).points.push({
+                x: parseHistoryDate(point.recorded_at).getTime(),
+                y: Number(point.price),
+                recorded_at: point.recorded_at,
+                previous_price: point.previous_price,
+                price_change: point.price_change,
+                change_type: point.change_type
+            });
+        });
+
+    return {
+        type: 'line',
+        data: {
+            datasets: [...stores.values()].map((store, index) => {
+                const color = colors[index % colors.length];
+                return {
+                    label: store.name,
+                    data: store.points,
+                    borderColor: color,
+                    backgroundColor: `${color}26`,
+                    borderWidth: 2,
+                    stepped: 'after',
+                    fill: false,
+                    pointBackgroundColor: context => {
+                        const movement = context.raw && context.raw.change_type;
+                        if (movement === 'decrease') return '#34d399';
+                        if (movement === 'increase') return '#fb7185';
+                        return color;
+                    },
+                    pointBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                };
+            })
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            parsing: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+                legend: { display: showLegend, labels: { color: '#e2e8f0' } },
+                tooltip: {
+                    backgroundColor: '#12121a',
+                    titleColor: '#00d4ff',
+                    bodyColor: '#e2e8f0',
+                    borderColor: '#2a2a40',
+                    borderWidth: 1,
+                    callbacks: {
+                        title: items => items.length
+                            ? parseHistoryDate(items[0].raw.recorded_at).toLocaleString()
+                            : '',
+                        label: context => `${context.dataset.label}: $${context.raw.y.toFixed(2)}`,
+                        afterLabel: context => {
+                            const point = context.raw;
+                            if (point.previous_price === null || point.previous_price === undefined) {
+                                return 'First recorded price';
+                            }
+                            const amount = Math.abs(Number(point.price_change)).toFixed(2);
+                            return point.change_type === 'decrease'
+                                ? `Dropped $${amount} from $${Number(point.previous_price).toFixed(2)}`
+                                : `Raised $${amount} from $${Number(point.previous_price).toFixed(2)}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: value => new Date(Number(value)).toLocaleDateString()
+                    }
+                },
+                y: {
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: value => `$${value}`
+                    }
+                }
+            }
+        }
+    };
+}
+
+function renderPriceHistoryEvents(historyData, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    const events = (historyData || [])
+        .filter(point => point.previous_price !== null && point.previous_price !== undefined && point.price_change)
+        .sort((a, b) => parseHistoryDate(b.recorded_at) - parseHistoryDate(a.recorded_at))
+        .slice(0, 20);
+
+    const heading = document.createElement('h4');
+    heading.textContent = 'Recent price changes';
+    container.appendChild(heading);
+
+    if (!events.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'No price changes recorded yet. Changes will appear after the next price update.';
+        container.appendChild(empty);
+        return;
+    }
+
+    const list = document.createElement('ol');
+    events.forEach(point => {
+        const item = document.createElement('li');
+        item.className = `history-event ${point.change_type}`;
+        const direction = point.change_type === 'decrease' ? 'dropped' : 'raised';
+        item.textContent = `${parseHistoryDate(point.recorded_at).toLocaleString()} · ${point.store_name}: $${Number(point.previous_price).toFixed(2)} → $${Number(point.price).toFixed(2)} (${direction} $${Math.abs(Number(point.price_change)).toFixed(2)})`;
+        list.appendChild(item);
+    });
+    container.appendChild(list);
+}
+
 function createGameCard(game) {
     const discount = Math.round(parseFloat(game.discount_percent) || 0);
     const isFree = game.current_price === 0 || game.current_price === '0.00';
@@ -1334,6 +1398,7 @@ function createGameCard(game) {
             <div class="card-body">
                 <div class="card-meta">
                     <span class="store-tag"><i class="fa-solid fa-store"></i> ${game.store_name || 'Store'}</span>
+                    ${game.is_popular ? `<span class="popularity-tag" title="${Number(game.steam_rating_percent)}% positive from Steam users"><i class="fa-solid fa-star"></i> Popular · ${Number(game.steam_rating_count).toLocaleString()} reviews</span>` : ''}
                     ${game.metacritic_score ? `<span class="meta-score" title="Metacritic Score"><i class="fa-solid fa-star"></i> ${game.metacritic_score}</span>` : ''}
                 </div>
                 <h3 class="card-title" title="${game.title}">${game.title}</h3>

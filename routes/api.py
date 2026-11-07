@@ -103,6 +103,7 @@ def deals():
         max_price (float): Maximum current price.
         genre (str): Filter by genre.
         free (bool): If true, only free games.
+        popular_only (bool): Include popular games, including games not on sale.
 
     Returns:
         JSON with deals list, page, total_pages, and total count.
@@ -117,6 +118,7 @@ def deals():
         max_price = request.args.get('max_price', None, type=float)
         genre = request.args.get('genre', None, type=str)
         free_only = request.args.get('free', 'false', type=str).lower() in ('true', '1', 'yes')
+        popular_only = request.args.get('popular_only', 'false', type=str).lower() in ('true', '1', 'yes')
 
         result = get_deals(
             page=page,
@@ -128,6 +130,7 @@ def deals():
             max_price=max_price,
             genre=genre,
             free_only=free_only,
+            popular_only=popular_only,
         )
 
         # result is expected to be a dict with 'deals' list and 'total' count
@@ -229,6 +232,16 @@ def search():
                                 'cheapshark_id': cs_id,
                                 'steam_app_id': info.get('steamAppID') or item.get('steamAppID') or None,
                                 'thumb_url': info.get('thumb') or item.get('thumb'),
+                                'steam_rating_percent': (
+                                    int(item['steamRatingPercent'])
+                                    if str(item.get('steamRatingPercent', '')).isdigit()
+                                    else None
+                                ),
+                                'steam_rating_count': (
+                                    int(item['steamRatingCount'])
+                                    if str(item.get('steamRatingCount', '')).isdigit()
+                                    else None
+                                ),
                             }
                             from database import upsert_game, upsert_price
                             g_id = upsert_game(game_data)
@@ -296,7 +309,7 @@ def game_price_history(game_id):
         days (int, optional): Number of days of history (default 90).
 
     Returns:
-        JSON list of {price, store_name, store_id, recorded_at}.
+        JSON list of price points with previous price and movement when available.
     """
     try:
         game = get_game_by_id(game_id)

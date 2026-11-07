@@ -8,7 +8,12 @@ import sqlite3
 import logging
 from datetime import datetime, timedelta
 
-from config import DATABASE_PATH, SUPPORTED_STORES
+from config import (
+    DATABASE_PATH,
+    POPULARITY_MIN_RATING,
+    POPULARITY_MIN_REVIEWS,
+    SUPPORTED_STORES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,8 @@ CREATE TABLE IF NOT EXISTS games (
     large_image_url TEXT,
     metacritic_score INTEGER,
     metacritic_url TEXT,
+    steam_rating_percent INTEGER,
+    steam_rating_count INTEGER,
     release_date TEXT,
     genre TEXT,
     publisher TEXT,
@@ -103,6 +110,14 @@ def init_db():
     conn = sqlite3.connect(DATABASE_PATH)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(_SCHEMA)
+
+    game_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(games)")
+    }
+    if 'steam_rating_percent' not in game_columns:
+        conn.execute("ALTER TABLE games ADD COLUMN steam_rating_percent INTEGER")
+    if 'steam_rating_count' not in game_columns:
+        conn.execute("ALTER TABLE games ADD COLUMN steam_rating_count INTEGER")
 
     # Seed stores from config
     for store_id, store_name in SUPPORTED_STORES.items():
@@ -227,9 +242,26 @@ def get_game_by_id(game_id):
             """,
             (game_id,),
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        return _add_popularity_flag(dict(row))
     finally:
         db.close()
+
+
+def _add_popularity_flag(game):
+    """Mark games popular when they have broad and positive Steam reviews."""
+    try:
+        review_count = int(game.get('steam_rating_count') or 0)
+        rating_percent = int(game.get('steam_rating_percent') or 0)
+    except (TypeError, ValueError):
+        review_count = 0
+        rating_percent = 0
+    game['is_popular'] = (
+        review_count >= POPULARITY_MIN_REVIEWS
+        and rating_percent >= POPULARITY_MIN_RATING
+    )
+    return game
 
 
 def get_game_by_cheapshark_id(cs_id):
@@ -253,7 +285,8 @@ def upsert_game(game_data):
     game_data : dict
         Must include 'title'. Optional keys: cheapshark_id, steam_app_id,
         thumb_url, large_image_url, metacritic_score, metacritic_url,
-        release_date, genre, publisher, developer, platform, description.
+        steam_rating_percent, steam_rating_count, release_date, genre,
+        publisher, developer, platform, description.
 
     Returns
     -------
@@ -274,8 +307,9 @@ def upsert_game(game_data):
             fields_to_update = {}
             for key in (
                 'title', 'steam_app_id', 'thumb_url', 'large_image_url',
-                'metacritic_score', 'metacritic_url', 'release_date',
-                'genre', 'publisher', 'developer', 'platform', 'description',
+                'metacritic_score', 'metacritic_url', 'steam_rating_percent',
+                'steam_rating_count', 'release_date', 'genre', 'publisher',
+                'developer', 'platform', 'description',
             ):
                 if key in game_data and game_data[key] is not None:
                     fields_to_update[key] = game_data[key]
@@ -296,8 +330,8 @@ def upsert_game(game_data):
             for key in (
                 'cheapshark_id', 'steam_app_id', 'thumb_url',
                 'large_image_url', 'metacritic_score', 'metacritic_url',
-                'release_date', 'genre', 'publisher', 'developer',
-                'platform', 'description',
+                'steam_rating_percent', 'steam_rating_count', 'release_date',
+                'genre', 'publisher', 'developer', 'platform', 'description',
             ):
                 if key in game_data and game_data[key] is not None:
                     cols.append(key)
@@ -418,7 +452,7 @@ def upsert_price(game_id, store_id, current_price, original_price,
 
 def get_deals(page=1, limit=20, sort_by='discount', min_discount=0,
               store_id=None, min_price=None, max_price=None,
-              genre=None, free_only=False):
+              genre=None, free_only=False, popular_only=False):
     """
     Return paginated deals joined with game and store data.
 
@@ -429,8 +463,15 @@ def get_deals(page=1, limit=20, sort_by='discount', min_discount=0,
     """
     db = get_db()
     try:
-        conditions = ["p.is_on_sale = 1"]
+        conditions = [] if popular_only else ["p.is_on_sale = 1"]
         params = []
+
+        if popular_only:
+            conditions.extend((
+                "COALESCE(g.steam_rating_count, 0) >= ?",
+                "COALESCE(g.steam_rating_percent, 0) >= ?",
+            ))
+            params.extend((POPULARITY_MIN_REVIEWS, POPULARITY_MIN_RATING))
 
         if min_discount and int(min_discount) > 0:
             conditions.append("p.discount_percent >= ?")
@@ -464,25 +505,62 @@ def get_deals(page=1, limit=20, sort_by='discount', min_discount=0,
             'title': 'g.title ASC',
             'metacritic': 'g.metacritic_score DESC',
             'newest': 'p.last_updated DESC',
+            'popularity': 'g.steam_rating_count DESC, g.steam_rating_percent DESC, p.discount_percent DESC',
         }
         order = order_map.get(sort_by, 'p.discount_percent DESC')
 
-        # Total count
-        count_row = db.execute(
-            f"""
-            SELECT COUNT(*) AS cnt
-              FROM prices p
-              JOIN games g ON g.id = p.game_id
-             WHERE {where}
-            """,
-            params,
-        ).fetchone()
+        if popular_only:
+            ranked_popular_prices = f"""
+                WITH ranked_prices AS (
+                    SELECT p.id AS price_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY p.game_id
+                               ORDER BY p.current_price ASC,
+                                        p.discount_percent DESC,
+                                        p.last_updated DESC,
+                                        p.id ASC
+                           ) AS game_rank
+                      FROM prices p
+                      JOIN games g ON g.id = p.game_id
+                     WHERE {where}
+                )
+            """
+            count_query = ranked_popular_prices + """
+                SELECT COUNT(*) AS cnt
+                  FROM ranked_prices
+                 WHERE game_rank = 1
+            """
+        else:
+            ranked_popular_prices = ""
+            count_query = f"""
+                SELECT COUNT(*) AS cnt
+                  FROM prices p
+                  JOIN games g ON g.id = p.game_id
+                 WHERE {where}
+            """
+
+        count_row = db.execute(count_query, params).fetchone()
         total = count_row['cnt'] if count_row else 0
 
         offset = (max(1, int(page)) - 1) * int(limit)
 
-        rows = db.execute(
-            f"""
+        if popular_only:
+            rows_query = ranked_popular_prices + f"""
+            SELECT g.*, p.current_price, p.original_price,
+                   p.discount_percent, p.deal_id, p.deal_url,
+                   p.is_on_sale, p.last_updated AS price_updated,
+                   s.name AS store_name, s.id AS store_id,
+                   s.logo_url AS store_logo_url, s.icon_url AS store_icon_url,
+                   s.website_url AS store_website_url
+              FROM prices p
+              JOIN ranked_prices rp ON rp.price_id = p.id AND rp.game_rank = 1
+              JOIN games g ON g.id = p.game_id
+              JOIN stores s ON s.id = p.store_id
+          ORDER BY {order}
+             LIMIT ? OFFSET ?
+            """
+        else:
+            rows_query = f"""
             SELECT g.*, p.current_price, p.original_price,
                    p.discount_percent, p.deal_id, p.deal_url,
                    p.is_on_sale, p.last_updated AS price_updated,
@@ -495,11 +573,14 @@ def get_deals(page=1, limit=20, sort_by='discount', min_discount=0,
              WHERE {where}
           ORDER BY {order}
              LIMIT ? OFFSET ?
-            """,
+            """
+
+        rows = db.execute(
+            rows_query,
             params + [int(limit), offset],
         ).fetchall()
 
-        deals_list = [dict(r) for r in rows]
+        deals_list = [_add_popularity_flag(dict(r)) for r in rows]
         return {'deals': deals_list, 'total': total}
     finally:
         db.close()
@@ -533,7 +614,7 @@ def search_games(query, limit=20):
             """,
             (f"%{query}%", int(limit)),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_add_popularity_flag(dict(r)) for r in rows]
     finally:
         db.close()
 
@@ -569,31 +650,45 @@ def get_price_history(game_id, store_id=None, days=90):
     """
     db = get_db()
     try:
-        conditions = ["ph.game_id = ?"]
         params = [game_id]
-
+        store_filter = ""
         if store_id:
-            conditions.append("ph.store_id = ?")
+            store_filter = " AND ph.store_id = ?"
             params.append(int(store_id))
-
-        if days:
-            cutoff = (datetime.utcnow() - timedelta(days=int(days))).isoformat()
-            conditions.append("ph.recorded_at >= ?")
-            params.append(cutoff)
-
-        where = " AND ".join(conditions)
-
         rows = db.execute(
-            f"""
+            """
             SELECT ph.*, s.name AS store_name
               FROM price_history ph
               JOIN stores s ON s.id = ph.store_id
-             WHERE {where}
-          ORDER BY ph.recorded_at ASC
+             WHERE ph.game_id = ?""" + store_filter + """
+          ORDER BY ph.recorded_at ASC, ph.id ASC
             """,
             params,
         ).fetchall()
-        return [dict(r) for r in rows]
+        history = []
+        previous_prices = {}
+        cutoff = None
+        if days:
+            cutoff = (datetime.utcnow() - timedelta(days=int(days))).isoformat()
+
+        for row in rows:
+            point = dict(row)
+            previous_price = previous_prices.get(point['store_id'])
+            point['previous_price'] = previous_price
+            point['price_change'] = (
+                round(point['price'] - previous_price, 2)
+                if previous_price is not None else None
+            )
+            point['change_type'] = None
+            if point['price_change'] is not None:
+                if point['price_change'] > 0:
+                    point['change_type'] = 'increase'
+                elif point['price_change'] < 0:
+                    point['change_type'] = 'decrease'
+            previous_prices[point['store_id']] = point['price']
+            if cutoff is None or point['recorded_at'] >= cutoff:
+                history.append(point)
+        return history
     finally:
         db.close()
 

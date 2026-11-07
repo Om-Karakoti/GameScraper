@@ -12,9 +12,10 @@ It automatically tracks video game discounts across 35+ digital game storefronts
 - **Multi-Store Price Comparison**: Detailed comparison table showing prices across all digital stores, highlighting the lowest available price and exact dollar savings.
 - **Dynamic Search**: Instant debounced search querying local records and automatically retrieving untracked titles on-the-fly from CheapShark.
 - **Category & Deal Filters**: Filter by store, price range, minimum discount %, and free games.
+- **Popularity Ranking**: Discover games with at least 1,000 Steam reviews and 70% positive ratings; popular games are collected even when they are not on sale.
 - **Persistent Wishlist**: Save games to a personal wishlist persisted in SQLite.
 - **Target Price Alerts**: Set custom target prices for any game with automatic price monitoring and dashboard notifications.
-- **Interactive Price History**: Visual price tracking charts powered by Chart.js.
+- **Interactive Price History**: Tracks price changes per store and shows dated drops and increases in Chart.js charts and a change timeline.
 - **Direct Store Links**: Direct purchase URLs and store links to each deal.
 
 ---
