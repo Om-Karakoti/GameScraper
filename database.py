@@ -235,7 +235,7 @@ def get_game_by_id(game_id):
                    p.deal_url           AS best_deal_url,
                    p.discount_percent   AS best_discount
               FROM games g
-         LEFT JOIN prices p ON p.game_id = g.id AND p.is_on_sale = 1
+         LEFT JOIN prices p ON p.game_id = g.id
          LEFT JOIN stores s ON s.id = p.store_id
              WHERE g.id = ?
           GROUP BY g.id
@@ -452,7 +452,7 @@ def upsert_price(game_id, store_id, current_price, original_price,
 
 def get_deals(page=1, limit=20, sort_by='discount', min_discount=0,
               store_id=None, min_price=None, max_price=None,
-              genre=None, free_only=False, popular_only=False):
+              genre=None, free_only=False, popular_only=False, search_query=None):
     """
     Return paginated deals joined with game and store data.
 
@@ -492,6 +492,11 @@ def get_deals(page=1, limit=20, sort_by='discount', min_discount=0,
         if genre:
             conditions.append("g.genre LIKE ?")
             params.append(f"%{genre}%")
+
+        if search_query and search_query.strip():
+            escaped_query = search_query.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            conditions.append("g.title LIKE ? ESCAPE ?")
+            params.extend((f"%{escaped_query}%", '\\'))
 
         if free_only:
             conditions.append("p.current_price = 0")

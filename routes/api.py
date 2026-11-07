@@ -104,6 +104,7 @@ def deals():
         genre (str): Filter by genre.
         free (bool): If true, only free games.
         popular_only (bool): Include popular games, including games not on sale.
+        q (str): Optional case-insensitive game-title search.
 
     Returns:
         JSON with deals list, page, total_pages, and total count.
@@ -117,6 +118,7 @@ def deals():
         min_price = request.args.get('min_price', None, type=float)
         max_price = request.args.get('max_price', None, type=float)
         genre = request.args.get('genre', None, type=str)
+        search_query = request.args.get('q', '', type=str).strip()[:100]
         free_only = request.args.get('free', 'false', type=str).lower() in ('true', '1', 'yes')
         popular_only = request.args.get('popular_only', 'false', type=str).lower() in ('true', '1', 'yes')
 
@@ -131,6 +133,7 @@ def deals():
             genre=genre,
             free_only=free_only,
             popular_only=popular_only,
+            search_query=search_query,
         )
 
         # result is expected to be a dict with 'deals' list and 'total' count

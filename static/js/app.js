@@ -18,8 +18,10 @@ const App = {
         max_price: '',
         min_discount: 0,
         free: false,
-        popular_only: false
+        popular_only: false,
+        query: ''
     },
+    dealSearchTimer: null,
     stores: [],
     genres: [],
     charts: {
@@ -179,21 +181,29 @@ const App = {
         const dropdown = document.getElementById('search-dropdown');
 
         if (globalSearch) {
-            const debouncedSearch = this.debounce(async (query) => {
+            let searchRequest = 0;
+            const debouncedSearch = this.debounce(async (query, requestId) => {
                 if (!query || query.length < 2) {
-                    if (dropdown) dropdown.innerHTML = '';
+                    Search.clearDropdown(dropdown);
                     return;
                 }
                 const results = await Search.query(query);
+                if (requestId !== searchRequest || globalSearch.value.trim() !== query) return;
                 Search.renderDropdown(results, dropdown);
             }, 300);
 
-            globalSearch.addEventListener('input', (e) => debouncedSearch(e.target.value.trim()));
+            globalSearch.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                searchRequest += 1;
+                Search.clearDropdown(dropdown);
+                debouncedSearch(query, searchRequest);
+            });
 
             globalSearch.addEventListener('keydown', async (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (dropdown) dropdown.innerHTML = '';
+                    searchRequest += 1;
+                    Search.clearDropdown(dropdown);
                     const q = globalSearch.value.trim();
                     if (q) {
                         App.navigate('explore');
@@ -205,7 +215,8 @@ const App = {
             // Close dropdown when clicking outside
             document.addEventListener('click', (e) => {
                 if (!globalSearch.contains(e.target) && dropdown && !dropdown.contains(e.target)) {
-                    dropdown.innerHTML = '';
+                    searchRequest += 1;
+                    Search.clearDropdown(dropdown);
                 }
             });
         }
@@ -214,24 +225,33 @@ const App = {
         const historySearch = document.getElementById('history-search');
         const historyDropdown = document.getElementById('history-search-dropdown');
         if (historySearch) {
-            const debouncedHistSearch = this.debounce(async (query) => {
+            let historySearchRequest = 0;
+            const debouncedHistSearch = this.debounce(async (query, requestId) => {
                 if (!query || query.length < 2) {
-                    if (historyDropdown) historyDropdown.innerHTML = '';
+                    Search.clearDropdown(historyDropdown);
                     return;
                 }
                 const results = await Search.query(query);
+                if (requestId !== historySearchRequest || historySearch.value.trim() !== query) return;
                 Search.renderDropdown(results, historyDropdown, (gameId) => {
-                    PriceHistory.loadForGame(gameId);
-                    historyDropdown.innerHTML = '';
+                    historySearchRequest += 1;
+                    Search.clearDropdown(historyDropdown);
                     historySearch.value = '';
+                    PriceHistory.loadForGame(gameId);
                 });
             }, 300);
 
-            historySearch.addEventListener('input', (e) => debouncedHistSearch(e.target.value.trim()));
+            historySearch.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                historySearchRequest += 1;
+                Search.clearDropdown(historyDropdown);
+                debouncedHistSearch(query, historySearchRequest);
+            });
 
             document.addEventListener('click', (e) => {
                 if (!historySearch.contains(e.target) && historyDropdown && !historyDropdown.contains(e.target)) {
-                    historyDropdown.innerHTML = '';
+                    historySearchRequest += 1;
+                    Search.clearDropdown(historyDropdown);
                 }
             });
         }
@@ -273,6 +293,36 @@ const App = {
                 App.filters.sort = sortSelect.value;
                 Deals.load(1);
             });
+        }
+
+        const dealsSearch = document.getElementById('deals-search');
+        const clearDealsSearch = document.getElementById('btn-clear-deals-search');
+        if (dealsSearch) {
+            dealsSearch.addEventListener('input', () => {
+                App.filters.query = dealsSearch.value.trim();
+                if (clearDealsSearch) clearDealsSearch.hidden = !dealsSearch.value;
+                window.clearTimeout(this.dealSearchTimer);
+                this.dealSearchTimer = window.setTimeout(() => Deals.load(1), 300);
+            });
+        }
+        if (clearDealsSearch && dealsSearch) {
+            clearDealsSearch.addEventListener('click', () => {
+                dealsSearch.value = '';
+                App.filters.query = '';
+                clearDealsSearch.hidden = true;
+                window.clearTimeout(this.dealSearchTimer);
+                Deals.load(1);
+                dealsSearch.focus();
+            });
+        }
+
+        document.querySelectorAll('[data-deal-preset]').forEach(button => {
+            button.addEventListener('click', () => Deals.applyQuickFilter(button.dataset.dealPreset));
+        });
+
+        const clearFiltersBtn = document.getElementById('btn-clear-deal-filters');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => Deals.resetFilters());
         }
     },
 
@@ -525,6 +575,7 @@ const Deals = {
         if (App.filters.min_discount > 0) params.append('min_discount', App.filters.min_discount);
         if (App.filters.free) params.append('free', 'true');
         if (App.filters.popular_only) params.append('popular_only', 'true');
+        if (App.filters.query) params.append('q', App.filters.query);
 
         try {
             const res = await fetch(`/api/deals?${params.toString()}`);
@@ -565,6 +616,7 @@ const Deals = {
         App.filters.min_discount = parseInt(document.getElementById('filter-min-discount').value) || 0;
         App.filters.free = document.getElementById('filter-free').checked;
         App.filters.popular_only = document.getElementById('filter-popular').value === 'true';
+        this.syncFilterControls();
 
         // Reset to page 1 on filter application
         this.load(1);
@@ -594,10 +646,88 @@ const Deals = {
             max_price: '',
             min_discount: 0,
             free: false,
-            popular_only: false
+            popular_only: false,
+            query: ''
         };
 
+        const dealsSearch = document.getElementById('deals-search');
+        if (dealsSearch) dealsSearch.value = '';
+        const clearDealsSearch = document.getElementById('btn-clear-deals-search');
+        if (clearDealsSearch) clearDealsSearch.hidden = true;
+        this.syncFilterControls();
         this.load(1);
+    },
+
+    applyQuickFilter(preset) {
+        App.filters.min_price = '';
+        App.filters.max_price = '';
+        App.filters.min_discount = 0;
+        App.filters.free = false;
+        App.filters.popular_only = false;
+
+        if (preset === 'popular') {
+            App.filters.popular_only = true;
+        } else if (preset === 'discount') {
+            App.filters.min_discount = 50;
+        } else if (preset === 'under-10') {
+            App.filters.max_price = '10';
+        } else if (preset === 'free') {
+            App.filters.free = true;
+        } else {
+            return;
+        }
+
+        this.syncFilterControls();
+        this.load(1);
+    },
+
+    syncFilterControls() {
+        document.getElementById('filter-genre').value = App.filters.genre;
+        document.getElementById('filter-store').value = App.filters.store_id;
+        document.getElementById('filter-min-price').value = App.filters.min_price;
+        document.getElementById('filter-max-price').value = App.filters.max_price;
+        document.getElementById('filter-min-discount').value = App.filters.min_discount;
+        document.getElementById('discount-val').textContent = `${App.filters.min_discount}%`;
+        document.getElementById('filter-free').checked = App.filters.free;
+        document.getElementById('filter-popular').value = App.filters.popular_only ? 'true' : 'false';
+
+        const filterCount = [
+            App.filters.genre,
+            App.filters.store_id,
+            App.filters.min_price,
+            App.filters.max_price,
+            App.filters.min_discount > 0,
+            App.filters.free,
+            App.filters.popular_only
+        ].filter(Boolean).length;
+        const countBadge = document.getElementById('filter-count');
+        if (countBadge) {
+            countBadge.textContent = filterCount;
+            countBadge.hidden = filterCount === 0;
+        }
+
+        document.querySelectorAll('[data-deal-preset]').forEach(button => {
+            const active = (
+                button.dataset.dealPreset === 'popular' && App.filters.popular_only &&
+                    !App.filters.free && App.filters.min_discount === 0 && !App.filters.min_price && !App.filters.max_price
+            ) || (
+                button.dataset.dealPreset === 'discount' && App.filters.min_discount === 50 &&
+                    !App.filters.popular_only && !App.filters.free && !App.filters.min_price && !App.filters.max_price
+            ) || (
+                button.dataset.dealPreset === 'under-10' && App.filters.max_price === '10' &&
+                    !App.filters.popular_only && !App.filters.free && App.filters.min_discount === 0 && !App.filters.min_price
+            ) || (
+                button.dataset.dealPreset === 'free' && App.filters.free &&
+                    !App.filters.popular_only && App.filters.min_discount === 0 && !App.filters.min_price && !App.filters.max_price
+            );
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', String(active));
+        });
+
+        const clearFiltersBtn = document.getElementById('btn-clear-deal-filters');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.hidden = filterCount === 0 && !App.filters.query;
+        }
     },
 
     renderPagination(currentPage, totalPages, container) {
@@ -636,6 +766,12 @@ const Deals = {
 // 3. SEARCH & EXPLORE MODULE
 // =================================================================
 const Search = {
+    clearDropdown(container) {
+        if (!container) return;
+        container.innerHTML = '';
+        container.classList.remove('active');
+    },
+
     async query(term) {
         try {
             const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`);
@@ -652,6 +788,7 @@ const Search = {
         if (!container) return;
         if (!results || results.length === 0) {
             container.innerHTML = '<div class="search-item search-item-empty">No games found</div>';
+            container.classList.add('active');
             return;
         }
 
@@ -664,11 +801,12 @@ const Search = {
                 </div>
             </div>
         `).join('');
+        container.classList.add('active');
 
         container.querySelectorAll('.search-item').forEach(el => {
             el.addEventListener('click', () => {
                 const gameId = el.getAttribute('data-game-id');
-                container.innerHTML = '';
+                Search.clearDropdown(container);
                 if (customSelectCallback) {
                     customSelectCallback(gameId);
                 } else {
@@ -1203,6 +1341,9 @@ const PriceHistory = {
                 container.innerHTML = `<div class="empty-state"><p>${game.error}</p></div>`;
                 return;
             }
+            if (!Array.isArray(history)) {
+                throw new Error(history.error || 'Could not load price history.');
+            }
 
             container.innerHTML = `
                 <div class="history-game-header">
@@ -1227,11 +1368,11 @@ const PriceHistory = {
             renderPriceHistoryEvents(history, document.getElementById('history-events'));
 
             if (!history || history.length === 0) {
-                const ctx = canvas.getContext('2d');
-                ctx.font = '16px Inter, sans-serif';
-                ctx.fillStyle = '#94a3b8';
-                ctx.textAlign = 'center';
-                ctx.fillText('No historical price points recorded for this game yet.', canvas.width / 2, canvas.height / 2);
+                canvas.hidden = true;
+                const emptyHistory = document.createElement('p');
+                emptyHistory.className = 'history-empty-message';
+                emptyHistory.textContent = 'No price snapshots are available for this game yet. Price history will appear after it is tracked and its price is checked.';
+                canvas.parentElement.appendChild(emptyHistory);
                 return;
             }
 
@@ -1364,7 +1505,12 @@ function renderPriceHistoryEvents(historyData, container) {
 
     if (!events.length) {
         const empty = document.createElement('p');
-        empty.textContent = 'No price changes recorded yet. Changes will appear after the next price update.';
+        const firstPoint = (historyData || [])
+            .slice()
+            .sort((a, b) => parseHistoryDate(a.recorded_at) - parseHistoryDate(b.recorded_at))[0];
+        empty.textContent = firstPoint
+            ? `Tracking started on ${parseHistoryDate(firstPoint.recorded_at).toLocaleString()} at $${Number(firstPoint.price).toFixed(2)} on ${firstPoint.store_name}. Changes will appear after a later price update.`
+            : 'No price changes are recorded yet.';
         container.appendChild(empty);
         return;
     }

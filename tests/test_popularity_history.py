@@ -80,6 +80,9 @@ class PopularityAndHistoryTests(unittest.TestCase):
         game_id = self.add_game('History test', 80, 1200)
         self.add_price(game_id, 1, 20, 0)
         self.add_price(game_id, 7, 30, 0)
+        game = database.get_game_by_id(game_id)
+        self.assertEqual(game['best_price'], 20)
+        self.assertEqual(game['best_store_name'], 'Steam')
         self.add_price(game_id, 1, 15, 25)
         self.add_price(game_id, 7, 35, 0)
 
@@ -103,6 +106,23 @@ class PopularityAndHistoryTests(unittest.TestCase):
             point['store_id'] == 7 and point['change_type'] == 'increase'
             for point in response.get_json()
         ))
+
+    def test_deals_can_be_searched_by_title(self):
+        matching_id = self.add_game('Searchable Adventure', 85, 1400)
+        self.add_game('Another Adventure', 80, 1200)
+        self.add_price(matching_id, 1, 5, 50)
+
+        result = database.get_deals(search_query='searchable')
+        self.assertEqual([deal['title'] for deal in result['deals']], ['Searchable Adventure'])
+
+        app = Flask(__name__)
+        app.register_blueprint(api_bp)
+        response = app.test_client().get('/api/deals?q=Searchable')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [deal['title'] for deal in response.get_json()['deals']],
+            ['Searchable Adventure'],
+        )
 
     def test_init_migrates_existing_games_table(self):
         legacy_path = os.path.join(self.temp_dir.name, 'legacy.db')
